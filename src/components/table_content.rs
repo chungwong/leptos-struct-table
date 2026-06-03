@@ -22,8 +22,9 @@ use leptos_use::{
     use_debounce_fn, use_element_size_with_options, use_scroll_with_options,
 };
 use std::cell::RefCell;
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::Debug;
+use std::hash::Hash;
 use std::marker::PhantomData;
 use std::ops::Range;
 use std::rc::Rc;
@@ -196,11 +197,15 @@ pub fn TableContent<Row, Column, DataP, Err, ClsP, ScrollEl, ScrollM>(
     /// Provides access to the data rows.
     #[prop(optional)]
     row_reader: RowReader<Row>,
+    /// Per-column widths in pixels for resizable columns.
+    /// When provided, columns can be resized by dragging the right edge of header cells.
+    #[prop(optional, into)]
+    column_widths: Option<RwSignal<HashMap<Column, f64>>>,
 
     #[prop(optional)] _marker: PhantomData<(Err, ScrollM)>,
 ) -> impl IntoView
 where
-    Column: Eq + Ord + Copy + Clone + Send + Sync + 'static,
+    Column: Eq + Ord + Hash + Copy + Clone + Send + Sync + 'static,
     Row: TableRow<Column, ClassesProvider = ClsP> + Clone + Send + Sync + 'static,
     DataP: TableDataProvider<Row, Column, Err> + 'static,
     Err: Debug + 'static,
@@ -208,6 +213,13 @@ where
     ScrollEl: IntoElementMaybeSignal<web_sys::Element, ScrollM> + 'static,
     ScrollM: 'static,
 {
+    if let Some(widths) = column_widths {
+        provide_context(crate::ColumnWidths::<Column> {
+            widths,
+            resizing: RwSignal::new(None),
+        });
+    }
+
     let on_change = StoredValue::new(on_change);
     let rows = Rc::new(RefCell::new(rows));
 
@@ -260,9 +272,6 @@ where
                     if let Some(row_count) = row_count {
                         set_known_row_count(row_count);
                     }
-
-                    // force update to trigger sorting effect below
-                    sorting.notify();
                 }
             })
         }
@@ -293,29 +302,39 @@ where
         sorting_mode.update_sorting_from_event(&mut sorting.write(), event);
     };
 
-    Effect::new({
-        let clear = clear.clone();
-        let rows = Rc::clone(&rows);
+    // Set initial sorting without triggering a reload.
+    if let Ok(mut rows) = rows.try_borrow_mut() {
+        rows.set_sorting(&sorting.get_untracked());
+    }
+    // Subsequent sorting changes clear + reload.
+    Effect::watch(
+        move || sorting.get(),
+        {
+            let clear = clear.clone();
+            let rows = Rc::clone(&rows);
+            move |sorting, _, _| {
+                if let Ok(mut rows) = rows.try_borrow_mut() {
+                    rows.set_sorting(sorting);
+                    clear(false);
+                }
+            }
+        },
+        false,
+    );
 
-        move || {
-            let sorting = sorting.read();
-            if let Ok(mut rows) = rows.try_borrow_mut() {
-                rows.set_sorting(&sorting);
-                clear(false);
-            };
-        }
-    });
-
-    Effect::new({
-        let rows = Rc::clone(&rows);
-
-        move || {
-            // triggered when `ReloadController::reload()` is called
-            reload_controller.track();
-            rows.borrow().track();
+    Effect::watch(
+        {
+            let rows = Rc::clone(&rows);
+            move || {
+                reload_controller.track();
+                rows.borrow().track();
+            }
+        },
+        move |_, _, _| {
             clear(true);
-        }
-    });
+        },
+        false,
+    );
 
     let selected_indices = match selection {
         Selection::None => Signal::stored(HashSet::new()),
@@ -414,7 +433,6 @@ where
         // with this a reload triggers this effect
         reload_count.track();
 
-        // 1. Get all values *atomically* within a single .with() call
         let (first_visible, visible_count, row_count_opt) = loaded_rows.with(|_| {
             (
                 first_visible_row_index.get(),
@@ -627,6 +645,14 @@ where
                                     let on_selection_change = on_selection_change.clone();
 
                                     move |evt: web_sys::MouseEvent| {
+                                        if let Some(target) = evt.target() {
+                                            use leptos::wasm_bindgen::JsCast;
+                                            if let Ok(el) = target.dyn_into::<web_sys::Element>() {
+                                                if el.closest("[data-row-id]").ok().flatten().is_some() {
+                                                    return;
+                                                }
+                                            }
+                                        }
                                         update_selection(evt, selection, first_selected_index, i);
 
                                         let selection_change_event = SelectionChangeEvent {
