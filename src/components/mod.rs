@@ -5,7 +5,6 @@ mod table_content;
 mod tbody;
 mod thead;
 mod thead_drag;
-mod thead_resize;
 
 pub use cell::*;
 pub use row::*;
@@ -13,7 +12,6 @@ pub use table_content::*;
 pub use tbody::*;
 pub use thead::*;
 pub use thead_drag::*;
-pub use thead_resize::*;
 
 #[macro_export]
 macro_rules! wrapper_render_fn {

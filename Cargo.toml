@@ -15,7 +15,7 @@ all-features = true
 
 [dependencies]
 leptos = { version = "0.8" }
-leptos-struct-table-macro = { path = "/hdd/repos/leptos-struct-table-macro" }
+leptos-struct-table-macro = { version = "0.15.0" }
 leptos-use = { version = "0.18", default-features = false, features = [
   "element",
   "use_debounce_fn",
@@ -36,6 +36,4 @@ chrono = ["dep:chrono"]
 uuid = ["dep:uuid"]
 rust_decimal = ["dep:rust_decimal"]
 time = ["dep:time"]
-serde = ["leptos-struct-table-macro/serde"]
-strum = ["leptos-struct-table-macro/strum"]
 i18n = ["leptos-struct-table-macro/i18n"]
