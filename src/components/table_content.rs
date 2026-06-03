@@ -272,6 +272,9 @@ where
                     if let Some(row_count) = row_count {
                         set_known_row_count(row_count);
                     }
+
+                    // force update to trigger sorting effect below
+                    sorting.notify();
                 }
             })
         }
@@ -302,39 +305,29 @@ where
         sorting_mode.update_sorting_from_event(&mut sorting.write(), event);
     };
 
-    // Set initial sorting without triggering a reload.
-    if let Ok(mut rows) = rows.try_borrow_mut() {
-        rows.set_sorting(&sorting.get_untracked());
-    }
-    // Subsequent sorting changes clear + reload.
-    Effect::watch(
-        move || sorting.get(),
-        {
-            let clear = clear.clone();
-            let rows = Rc::clone(&rows);
-            move |sorting, _, _| {
-                if let Ok(mut rows) = rows.try_borrow_mut() {
-                    rows.set_sorting(sorting);
-                    clear(false);
-                }
-            }
-        },
-        false,
-    );
+    Effect::new({
+        let clear = clear.clone();
+        let rows = Rc::clone(&rows);
 
-    Effect::watch(
-        {
-            let rows = Rc::clone(&rows);
-            move || {
-                reload_controller.track();
-                rows.borrow().track();
-            }
-        },
-        move |_, _, _| {
+        move || {
+            let sorting = sorting.read();
+            if let Ok(mut rows) = rows.try_borrow_mut() {
+                rows.set_sorting(&sorting);
+                clear(false);
+            };
+        }
+    });
+
+    Effect::new({
+        let rows = Rc::clone(&rows);
+
+        move || {
+            // triggered when `ReloadController::reload()` is called
+            reload_controller.track();
+            rows.borrow().track();
             clear(true);
-        },
-        false,
-    );
+        }
+    });
 
     let selected_indices = match selection {
         Selection::None => Signal::stored(HashSet::new()),
