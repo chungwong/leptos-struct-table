@@ -1,3 +1,6 @@
+[workspace]
+members = ["leptos-struct-table-macro"]
+
 [package]
 name = "leptos-struct-table"
 version = "0.18.0"
@@ -15,7 +18,7 @@ all-features = true
 
 [dependencies]
 leptos = { version = "0.8" }
-leptos-struct-table-macro = { path = "/hdd/repos/leptos-struct-table-macro" }
+leptos-struct-table-macro = { path = "leptos-struct-table-macro" }
 leptos-use = { version = "0.18", default-features = false, features = [
   "element",
   "use_debounce_fn",
